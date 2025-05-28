@@ -22,6 +22,8 @@ const defaultConfig = {
 class Demonstrate {
   constructor(opt) {
     this.mindMap = opt.mindMap
+    // 是否正在演示中
+    this.isInDemonstrate = false
     // 演示的步骤列表
     this.stepList = []
     // 当前所在步骤
@@ -40,6 +42,19 @@ class Demonstrate {
       { ...defaultConfig },
       this.mindMap.opt.demonstrateConfig || {}
     )
+    this.needRestorePerformanceMode = false
+    this.onConfigUpdate = this.onConfigUpdate.bind(this)
+    this.mindMap.on('after_update_config', this.onConfigUpdate)
+  }
+
+  // 监听配置更新
+  onConfigUpdate(opt) {
+    if (typeof opt.demonstrateConfig !== 'undefined') {
+      this.config = {
+        ...this.config,
+        ...opt.demonstrateConfig
+      }
+    }
   }
 
   // 进入演示模式
@@ -56,6 +71,9 @@ class Demonstrate {
   }
 
   _enter() {
+    this.isInDemonstrate = true
+    // 如果开启了性能模式，那么需要暂停
+    this.pausePerformanceMode()
     // 添加演示用的临时的样式
     this.addTmpStyles()
     // 记录演示前的画布状态
@@ -71,8 +89,16 @@ class Demonstrate {
     // 计算步骤数据
     this.getStepList()
     // 收起所有节点
+    let wait = false
+    if (this.mindMap.renderer.isRendering) {
+      wait = true
+    }
     this.mindMap.execCommand('UNEXPAND_ALL', false)
     const onRenderEnd = () => {
+      if (wait) {
+        wait = false
+        return
+      }
       this.mindMap.off('node_tree_render_end', onRenderEnd)
       // 聚焦到第一步
       this.jump(this.currentStepIndex)
@@ -97,7 +123,26 @@ class Demonstrate {
     this.removeHighlightEl()
     this.mindMap.command.recovery()
     this.mindMap.keyCommand.recovery()
+    this.restorePerformanceMode()
     this.mindMap.emit('exit_demonstrate')
+    this.isInDemonstrate = false
+  }
+
+  // 暂停性能模式
+  pausePerformanceMode() {
+    const { openPerformance } = this.mindMap.opt
+    if (openPerformance) {
+      this.needRestorePerformanceMode = true
+      this.mindMap.opt.openPerformance = false
+      this.mindMap.renderer.forceLoadNode()
+    }
+  }
+
+  // 恢复性能模式
+  restorePerformanceMode() {
+    if (!this.needRestorePerformanceMode) return
+    this.mindMap.opt.openPerformance = true
+    this.mindMap.renderer.forceLoadNode()
   }
 
   // 添加临时的样式
@@ -384,11 +429,13 @@ class Demonstrate {
   // 插件被移除前做的事情
   beforePluginRemove() {
     this.unBindEvent()
+    this.mindMap.off('after_update_config', this.onConfigUpdate)
   }
 
   // 插件被卸载前做的事情
   beforePluginDestroy() {
     this.unBindEvent()
+    this.mindMap.off('after_update_config', this.onConfigUpdate)
   }
 }
 

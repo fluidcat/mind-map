@@ -1,4 +1,4 @@
-import Node from './Node'
+import MindMapNode from './MindMapNode'
 import { createUid } from '../../../utils/index'
 
 // 获取节点概要数据
@@ -49,7 +49,7 @@ function createGeneralizationNode() {
       cur.generalizationLine = this.lineDraw.path()
     }
     if (!cur.generalizationNode) {
-      cur.generalizationNode = new Node({
+      cur.generalizationNode = new MindMapNode({
         data: {
           inserting: item.inserting,
           data: item
@@ -85,7 +85,7 @@ function updateGeneralization() {
 }
 
 //  渲染概要节点
-function renderGeneralization() {
+function renderGeneralization(forceRender) {
   if (this.isGeneralization) return
   this.updateGeneralizationData()
   const list = this.formatGetGeneralization()
@@ -100,13 +100,13 @@ function renderGeneralization() {
   this.renderer.layout.renderGeneralization(this._generalizationList)
   this._generalizationList.forEach(item => {
     this.style.generalizationLine(item.generalizationLine)
-    item.generalizationNode.render()
+    item.generalizationNode.render(() => {}, forceRender)
   })
 }
 
 // 更新节点概要数据
 function updateGeneralizationData() {
-  const childrenLength = this.nodeData.children.length
+  const childrenLength = this.getChildrenLength()
   const list = this.formatGetGeneralization()
   const newList = []
   list.forEach(item => {
@@ -186,15 +186,29 @@ function handleGeneralizationMouseenter() {
   const list = belongNode.formatGetGeneralization()
   const index = belongNode.getGeneralizationNodeIndex(this)
   const generalizationData = list[index]
+  // 如果主题中设置了hoverRectColor颜色，那么使用该颜色
+  // 否则使用hoverRectColor实例化选项的颜色
+  // 兜底使用highlightNode方法的默认颜色
+  const hoverRectColor = this.getStyle('hoverRectColor')
+  const color = hoverRectColor || this.mindMap.opt.hoverRectColor
+  const style = color
+    ? {
+        stroke: color
+      }
+    : null
   // 区间概要，框子节点
   if (
     Array.isArray(generalizationData.range) &&
     generalizationData.range.length > 0
   ) {
-    this.mindMap.renderer.highlightNode(belongNode, generalizationData.range)
+    this.mindMap.renderer.highlightNode(
+      belongNode,
+      generalizationData.range,
+      style
+    )
   } else {
     // 否则框自己
-    this.mindMap.renderer.highlightNode(belongNode)
+    this.mindMap.renderer.highlightNode(belongNode, null, style)
   }
 }
 

@@ -1,186 +1,26 @@
-//  主题列表
-export const themeList = [
-  {
-    name: '默认',
-    value: 'default',
-    dark: false
-  },
-  {
-    name: '暗色2',
-    value: 'dark2',
-    dark: true
-  },
-  {
-    name: '天清绿',
-    value: 'skyGreen',
-    dark: false
-  },
-  {
-    name: '脑图经典2',
-    value: 'classic2',
-    dark: false
-  },
-  {
-    name: '脑图经典3',
-    value: 'classic3',
-    dark: false
-  },
-  {
-    name: '经典绿',
-    value: 'classicGreen',
-    dark: false
-  },
-  {
-    name: '经典蓝',
-    value: 'classicBlue',
-    dark: false
-  },
-  {
-    name: '天空蓝',
-    value: 'blueSky',
-    dark: false
-  },
-  {
-    name: '脑残粉',
-    value: 'brainImpairedPink',
-    dark: false
-  },
-  {
-    name: '暗色',
-    value: 'dark',
-    dark: true
-  },
-  {
-    name: '泥土黄',
-    value: 'earthYellow',
-    dark: false
-  },
-  {
-    name: '清新绿',
-    value: 'freshGreen',
-    dark: false
-  },
-  {
-    name: '清新红',
-    value: 'freshRed',
-    dark: false
-  },
-  {
-    name: '浪漫紫',
-    value: 'romanticPurple',
-    dark: false
-  },
-  {
-    name: '粉红葡萄',
-    value: 'pinkGrape',
-    dark: false
-  },
-  {
-    name: '薄荷',
-    value: 'mint',
-    dark: false
-  },
-  {
-    name: '金色vip',
-    value: 'gold',
-    dark: false
-  },
-  {
-    name: '活力橙',
-    value: 'vitalityOrange',
-    dark: false
-  },
-  {
-    name: '绿叶',
-    value: 'greenLeaf',
-    dark: false
-  },
-  {
-    name: '脑图经典',
-    value: 'classic',
-    dark: true
-  },
-  {
-    name: '脑图经典4',
-    value: 'classic4',
-    dark: false
-  },
-  {
-    name: '小黄人',
-    value: 'minions',
-    dark: false
-  },
-  {
-    name: '简约黑',
-    value: 'simpleBlack',
-    dark: false
-  },
-  {
-    name: '课程绿',
-    value: 'courseGreen',
-    dark: false
-  },
-  {
-    name: '咖啡',
-    value: 'coffee',
-    dark: false
-  },
-  {
-    name: '红色精神',
-    value: 'redSpirit',
-    dark: false
-  },
-  {
-    name: '黑色幽默',
-    value: 'blackHumour',
-    dark: true
-  },
-  {
-    name: '深夜办公室',
-    value: 'lateNightOffice',
-    dark: true
-  },
-  {
-    name: '黑金',
-    value: 'blackGold',
-    dark: true
-  },
-  {
-    name: '牛油果',
-    value: 'avocado',
-    dark: false
-  },
-  {
-    name: '秋天',
-    value: 'autumn',
-    dark: false
-  },
-  {
-    name: '橙汁',
-    value: 'orangeJuice',
-    dark: true
-  }
-]
-
 // 常量
 export const CONSTANTS = {
   CHANGE_THEME: 'changeTheme',
   CHANGE_LAYOUT: 'changeLayout',
-  SET_DATA: 'setData',
-  TRANSFORM_TO_NORMAL_NODE: 'transformAllNodesToNormalNode',
   MODE: {
     READONLY: 'readonly',
     EDIT: 'edit'
   },
   LAYOUT: {
     LOGICAL_STRUCTURE: 'logicalStructure',
+    LOGICAL_STRUCTURE_LEFT: 'logicalStructureLeft',
     MIND_MAP: 'mindMap',
     ORGANIZATION_STRUCTURE: 'organizationStructure',
     CATALOG_ORGANIZATION: 'catalogOrganization',
     TIMELINE: 'timeline',
     TIMELINE2: 'timeline2',
     FISHBONE: 'fishbone',
-    VERTICAL_TIMELINE: 'verticalTimeline'
+    FISHBONE2: 'fishbone2',
+    RIGHT_FISHBONE: 'rightFishbone',
+    RIGHT_FISHBONE2: 'rightFishbone2',
+    VERTICAL_TIMELINE: 'verticalTimeline',
+    VERTICAL_TIMELINE2: 'verticalTimeline2',
+    VERTICAL_TIMELINE3: 'verticalTimeline3'
   },
   DIR: {
     UP: 'up',
@@ -234,6 +74,16 @@ export const CONSTANTS = {
     DEFAULT: 'default',
     NOT_ACTIVE: 'notActive',
     ACTIVE_ONLY: 'activeOnly'
+  },
+  TAG_PLACEMENT: {
+    RIGHT: 'right',
+    BOTTOM: 'bottom'
+  },
+  IMG_PLACEMENT: {
+    LEFT: 'left',
+    TOP: 'top',
+    RIGHT: 'right',
+    BOTTOM: 'bottom'
   }
 }
 
@@ -250,6 +100,10 @@ export const layoutList = [
   {
     name: '逻辑结构图',
     value: CONSTANTS.LAYOUT.LOGICAL_STRUCTURE
+  },
+  {
+    name: '向左逻辑结构图',
+    value: CONSTANTS.LAYOUT.LOGICAL_STRUCTURE_LEFT
   },
   {
     name: '思维导图',
@@ -276,19 +130,45 @@ export const layoutList = [
     value: CONSTANTS.LAYOUT.VERTICAL_TIMELINE
   },
   {
+    name: '竖向时间轴2',
+    value: CONSTANTS.LAYOUT.VERTICAL_TIMELINE2
+  },
+  {
+    name: '竖向时间轴3',
+    value: CONSTANTS.LAYOUT.VERTICAL_TIMELINE3
+  },
+  {
     name: '鱼骨图',
     value: CONSTANTS.LAYOUT.FISHBONE
+  },
+  {
+    name: '鱼骨图2',
+    value: CONSTANTS.LAYOUT.FISHBONE2
+  },
+  {
+    name: '向右鱼骨图',
+    value: CONSTANTS.LAYOUT.RIGHT_FISHBONE
+  },
+  {
+    name: '向右鱼骨图2',
+    value: CONSTANTS.LAYOUT.RIGHT_FISHBONE2
   }
 ]
 export const layoutValueList = [
   CONSTANTS.LAYOUT.LOGICAL_STRUCTURE,
+  CONSTANTS.LAYOUT.LOGICAL_STRUCTURE_LEFT,
   CONSTANTS.LAYOUT.MIND_MAP,
   CONSTANTS.LAYOUT.CATALOG_ORGANIZATION,
   CONSTANTS.LAYOUT.ORGANIZATION_STRUCTURE,
   CONSTANTS.LAYOUT.TIMELINE,
   CONSTANTS.LAYOUT.TIMELINE2,
   CONSTANTS.LAYOUT.VERTICAL_TIMELINE,
-  CONSTANTS.LAYOUT.FISHBONE
+  CONSTANTS.LAYOUT.VERTICAL_TIMELINE2,
+  CONSTANTS.LAYOUT.VERTICAL_TIMELINE3,
+  CONSTANTS.LAYOUT.FISHBONE,
+  CONSTANTS.LAYOUT.FISHBONE2,
+  CONSTANTS.LAYOUT.RIGHT_FISHBONE,
+  CONSTANTS.LAYOUT.RIGHT_FISHBONE2
 ]
 
 // 节点数据中非样式的字段
@@ -306,7 +186,7 @@ export const nodeDataNoStylePropList = [
   'isActive',
   'generalization',
   'richText',
-  'resetRichText',
+  'resetRichText', // 重新创建富文本内容，去掉原有样式
   'uid',
   'activeStyle',
   'associativeLineTargets',
@@ -314,7 +194,19 @@ export const nodeDataNoStylePropList = [
   'associativeLinePoint',
   'associativeLineText',
   'attachmentUrl',
-  'attachmentName'
+  'attachmentName',
+  'notation',
+  'outerFrame',
+  'number',
+  'range',
+  'customLeft',
+  'customTop',
+  'customTextWidth',
+  'checkbox',
+  'dir',
+  'needUpdate', // 重新创建节点内容
+  'imgMap',
+  'nodeLink'
 ]
 
 // 错误类型
@@ -347,6 +239,10 @@ export const cssContent = `
     opacity: 1;
     stroke-width: 2;
   }
+
+  .smm-text-node-wrap, .smm-expand-btn-text {
+    user-select: none;
+  }
 `
 
 // html自闭合标签列表
@@ -358,4 +254,18 @@ export const selfCloseTagList = [
   'link',
   'meta',
   'area'
+]
+
+// 非富文本模式下的节点文本行高
+export const noneRichTextNodeLineHeight = 1.2
+
+// 富文本支持的样式列表
+export const richTextSupportStyleList = [
+  'fontFamily',
+  'fontSize',
+  'fontWeight',
+  'fontStyle',
+  'textDecoration',
+  'color',
+  'textAlign'
 ]

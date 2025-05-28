@@ -2,10 +2,12 @@ import {
   bfsWalk,
   throttle,
   getTopAncestorsFomNodeList,
-  getNodeIndexInNodeList
+  getNodeIndexInNodeList,
+  sortNodeList
 } from '../utils'
 import Base from '../layouts/Base'
 import { CONSTANTS } from '../constants/constant'
+import AutoMove from '../utils/AutoMove'
 
 // 节点拖动插件
 class Drag extends Base {
@@ -13,13 +15,14 @@ class Drag extends Base {
   constructor({ mindMap }) {
     super(mindMap.renderer)
     this.mindMap = mindMap
+    this.autoMove = new AutoMove(mindMap)
     this.reset()
     this.bindEvent()
   }
 
   //  复位
   reset() {
-    // 是否正在跳转中
+    // 是否正在拖拽中
     this.isDragging = false
     // 鼠标按下的节点
     this.mousedownNode = null
@@ -90,7 +93,6 @@ class Drag extends Base {
     ) {
       return
     }
-    e.preventDefault()
     this.isMousedown = true
     // 记录鼠标按下时的节点
     this.mousedownNode = node
@@ -123,13 +125,15 @@ class Drag extends Base {
   }
 
   //  鼠标松开事件
-  onMouseup(e) {
+  async onMouseup(e) {
     if (!this.isMousedown) {
       return
     }
+    const { autoMoveWhenMouseInEdgeOnDrag, enableFreeDrag, beforeDragEnd } =
+      this.mindMap.opt
     // 停止自动移动
-    if (this.mindMap.opt.autoMoveWhenMouseInEdgeOnDrag && this.mindMap.select) {
-      this.mindMap.select.clearAutoMoveTimer()
+    if (autoMoveWhenMouseInEdgeOnDrag && this.mindMap.select) {
+      this.autoMove.clearAutoMoveTimer()
     }
     this.isMousedown = false
     // 恢复被拖拽节点的临时设置
@@ -142,9 +146,21 @@ class Drag extends Base {
     let overlapNodeUid = this.overlapNode ? this.overlapNode.getData('uid') : ''
     let prevNodeUid = this.prevNode ? this.prevNode.getData('uid') : ''
     let nextNodeUid = this.nextNode ? this.nextNode.getData('uid') : ''
+    if (this.isDragging && typeof beforeDragEnd === 'function') {
+      const isCancel = await beforeDragEnd({
+        overlapNodeUid,
+        prevNodeUid,
+        nextNodeUid,
+        beingDragNodeList: [...this.beingDragNodeList]
+      })
+      if (isCancel) {
+        this.reset()
+        return
+      }
+    }
     // 存在重叠子节点，则移动作为其子节点
     if (this.overlapNode) {
-      this.mindMap.execCommand('SET_NODE_ACTIVE', this.overlapNode, false)
+      this.removeNodeActive(this.overlapNode)
       this.mindMap.execCommand(
         'MOVE_NODE_TO',
         this.beingDragNodeList,
@@ -152,7 +168,7 @@ class Drag extends Base {
       )
     } else if (this.prevNode) {
       // 存在前一个相邻节点，作为其下一个兄弟节点
-      this.mindMap.execCommand('SET_NODE_ACTIVE', this.prevNode, false)
+      this.removeNodeActive(this.prevNode)
       this.mindMap.execCommand(
         'INSERT_AFTER',
         this.beingDragNodeList,
@@ -160,7 +176,7 @@ class Drag extends Base {
       )
     } else if (this.nextNode) {
       // 存在下一个相邻节点，作为其前一个兄弟节点
-      this.mindMap.execCommand('SET_NODE_ACTIVE', this.nextNode, false)
+      this.removeNodeActive(this.nextNode)
       this.mindMap.execCommand(
         'INSERT_BEFORE',
         this.beingDragNodeList,
@@ -168,7 +184,7 @@ class Drag extends Base {
       )
     } else if (
       this.clone &&
-      this.mindMap.opt.enableFreeDrag &&
+      enableFreeDrag &&
       this.beingDragNodeList.length === 1
     ) {
       // 如果只拖拽了一个节点，那么设置自定义位置
@@ -201,9 +217,16 @@ class Drag extends Base {
     this.reset()
   }
 
+  // 移除节点的激活状态
+  removeNodeActive(node) {
+    if (node.getData('isActive')) {
+      this.mindMap.execCommand('SET_NODE_ACTIVE', node, false)
+    }
+  }
+
   //  拖动中
   onMove(x, y, e) {
-    if (!this.isMousedown) {
+    if (!this.isMousedown || !this.isDragging) {
       return
     }
     // 更新克隆节点的位置
@@ -216,18 +239,15 @@ class Drag extends Base {
     this.clone.translate(x - t.translateX, y - t.translateY)
     // 检测新位置
     this.checkOverlapNode()
-    // 如果注册了多选节点插件，那么复用它的边缘自动移动画布功能
-    if (this.mindMap.opt.autoMoveWhenMouseInEdgeOnDrag && this.mindMap.select) {
-      this.drawTransform = this.mindMap.draw.transform()
-      this.mindMap.select.clearAutoMoveTimer()
-      this.mindMap.select.onMove(e.clientX, e.clientY)
-    }
+    // 边缘自动移动画布
+    this.drawTransform = this.mindMap.draw.transform()
+    this.autoMove.clearAutoMoveTimer()
+    this.autoMove.onMove(e.clientX, e.clientY)
   }
 
   // 开始拖拽时初始化一些数据
-  handleStartMove() {
+  async handleStartMove() {
     if (!this.isDragging) {
-      this.isDragging = true
       // 鼠标按下的节点
       let node = this.mousedownNode
       // 计算鼠标按下的位置距离节点左上角的距离
@@ -238,15 +258,24 @@ class Drag extends Base {
       // 如果鼠标按下的节点是激活节点，那么保存当前所有激活的节点
       if (node.getData('isActive')) {
         // 找出这些激活节点中的最顶层节点
-        this.beingDragNodeList = getTopAncestorsFomNodeList(
-          // 过滤掉根节点和概要节点
-          this.mindMap.renderer.activeNodeList.filter(item => {
-            return !item.isRoot && !item.isGeneralization
-          })
+        // 并按索引从小到大排序
+        this.beingDragNodeList = sortNodeList(
+          getTopAncestorsFomNodeList(
+            // 过滤掉根节点和概要节点
+            this.mindMap.renderer.activeNodeList.filter(item => {
+              return !item.isRoot && !item.isGeneralization
+            })
+          )
         )
       } else {
         // 否则只拖拽按下的节点
         this.beingDragNodeList = [node]
+      }
+      // 拦截拖拽
+      const { beforeDragStart } = this.mindMap.opt
+      if (typeof beforeDragStart === 'function') {
+        const stop = await beforeDragStart([...this.beingDragNodeList])
+        if (stop) return
       }
       // 将节点树转为节点数组
       this.nodeTreeToList()
@@ -254,6 +283,7 @@ class Drag extends Base {
       this.createCloneNode()
       // 清除当前所有激活的节点
       this.mindMap.execCommand('CLEAR_ACTIVE_NODE')
+      this.isDragging = true
     }
   }
 
@@ -282,7 +312,8 @@ class Drag extends Base {
         dragMultiNodeRectConfig,
         dragPlaceholderRectFill,
         dragPlaceholderLineConfig,
-        dragOpacityConfig
+        dragOpacityConfig,
+        handleDragCloneNode
       } = this.mindMap.opt
       const {
         width: rectWidth,
@@ -311,6 +342,9 @@ class Drag extends Base {
           expandEl.remove()
         }
         this.mindMap.otherDraw.add(this.clone)
+        if (typeof handleDragCloneNode === 'function') {
+          handleDragCloneNode(this.clone)
+        }
       }
       this.clone.opacity(dragOpacityConfig.cloneNodeOpacity)
       this.clone.css('z-index', 99999)
@@ -366,13 +400,19 @@ class Drag extends Base {
     }
     const {
       LOGICAL_STRUCTURE,
+      LOGICAL_STRUCTURE_LEFT,
       MIND_MAP,
       ORGANIZATION_STRUCTURE,
       CATALOG_ORGANIZATION,
       TIMELINE,
       TIMELINE2,
       VERTICAL_TIMELINE,
-      FISHBONE
+      VERTICAL_TIMELINE2,
+      VERTICAL_TIMELINE3,
+      FISHBONE,
+      FISHBONE2,
+      RIGHT_FISHBONE,
+      RIGHT_FISHBONE2
     } = CONSTANTS.LAYOUT
     this.overlapNode = null
     this.prevNode = null
@@ -389,6 +429,7 @@ class Drag extends Base {
       }
       switch (this.mindMap.opt.layout) {
         case LOGICAL_STRUCTURE:
+        case LOGICAL_STRUCTURE_LEFT:
           this.handleLogicalStructure(node)
           break
         case MIND_MAP:
@@ -407,9 +448,14 @@ class Drag extends Base {
           this.handleTimeLine2(node)
           break
         case VERTICAL_TIMELINE:
+        case VERTICAL_TIMELINE2:
+        case VERTICAL_TIMELINE3:
           this.handleLogicalStructure(node)
           break
         case FISHBONE:
+        case FISHBONE2:
+        case RIGHT_FISHBONE:
+        case RIGHT_FISHBONE2:
           this.handleFishbone(node)
           break
         default:
@@ -426,13 +472,19 @@ class Drag extends Base {
   handleOverlapNode() {
     const {
       LOGICAL_STRUCTURE,
+      LOGICAL_STRUCTURE_LEFT,
       MIND_MAP,
       ORGANIZATION_STRUCTURE,
       CATALOG_ORGANIZATION,
       TIMELINE,
       TIMELINE2,
       VERTICAL_TIMELINE,
-      FISHBONE
+      VERTICAL_TIMELINE2,
+      VERTICAL_TIMELINE3,
+      FISHBONE,
+      FISHBONE2,
+      RIGHT_FISHBONE,
+      RIGHT_FISHBONE2
     } = CONSTANTS.LAYOUT
     const { LEFT, TOP, RIGHT, BOTTOM } = CONSTANTS.LAYOUT_GROW_DIR
     const layerIndex = this.overlapNode.layerIndex
@@ -458,6 +510,10 @@ class Drag extends Base {
             dir === LEFT
               ? lastNodeRect.originRight - this.placeholderWidth
               : lastNodeRect.originLeft
+          y = lastNodeRect.originBottom + this.minOffset - halfPlaceholderHeight
+          break
+        case LOGICAL_STRUCTURE_LEFT:
+          x = lastNodeRect.originRight - this.placeholderWidth
           y = lastNodeRect.originBottom + this.minOffset - halfPlaceholderHeight
           break
         case ORGANIZATION_STRUCTURE:
@@ -522,6 +578,8 @@ class Drag extends Base {
           }
           break
         case VERTICAL_TIMELINE:
+        case VERTICAL_TIMELINE2:
+        case VERTICAL_TIMELINE3:
           if (layerIndex === 0) {
             x =
               lastNodeRect.originLeft +
@@ -539,6 +597,9 @@ class Drag extends Base {
           }
           break
         case FISHBONE:
+        case FISHBONE2:
+        case RIGHT_FISHBONE:
+        case RIGHT_FISHBONE2:
           if (layerIndex <= 1) {
             notRenderPlaceholder = true
             this.mindMap.execCommand('SET_NODE_ACTIVE', this.overlapNode, true)
@@ -568,6 +629,12 @@ class Drag extends Base {
             dir === RIGHT
               ? nodeRect.originRight + marginX
               : nodeRect.originLeft - this.placeholderWidth - marginX
+          y =
+            nodeRect.originTop +
+            (nodeRect.originHeight - this.placeholderHeight) / 2
+          break
+        case LOGICAL_STRUCTURE_LEFT:
+          x = nodeRect.originLeft - this.placeholderWidth - marginX
           y =
             nodeRect.originTop +
             (nodeRect.originHeight - this.placeholderHeight) / 2
@@ -608,6 +675,8 @@ class Drag extends Base {
           }
           break
         case VERTICAL_TIMELINE:
+        case VERTICAL_TIMELINE2:
+        case VERTICAL_TIMELINE3:
           if (layerIndex === 0) {
             rotate = true
           }
@@ -621,6 +690,9 @@ class Drag extends Base {
             halfPlaceholderHeight
           break
         case FISHBONE:
+        case FISHBONE2:
+        case RIGHT_FISHBONE:
+        case RIGHT_FISHBONE2:
           if (layerIndex <= 1) {
             notRenderPlaceholder = true
             this.mindMap.execCommand('SET_NODE_ACTIVE', this.overlapNode, true)
@@ -652,18 +724,31 @@ class Drag extends Base {
   getNewChildNodeDir(node) {
     const {
       LOGICAL_STRUCTURE,
+      LOGICAL_STRUCTURE_LEFT,
       MIND_MAP,
       TIMELINE2,
       VERTICAL_TIMELINE,
-      FISHBONE
+      VERTICAL_TIMELINE2,
+      VERTICAL_TIMELINE3,
+      FISHBONE,
+      FISHBONE2,
+      RIGHT_FISHBONE,
+      RIGHT_FISHBONE2
     } = CONSTANTS.LAYOUT
     switch (this.mindMap.opt.layout) {
       case LOGICAL_STRUCTURE:
         return CONSTANTS.LAYOUT_GROW_DIR.RIGHT
+      case LOGICAL_STRUCTURE_LEFT:
+        return CONSTANTS.LAYOUT_GROW_DIR.LEFT
       case MIND_MAP:
       case TIMELINE2:
       case VERTICAL_TIMELINE:
+      case VERTICAL_TIMELINE2:
+      case VERTICAL_TIMELINE3:
       case FISHBONE:
+      case FISHBONE2:
+      case RIGHT_FISHBONE:
+      case RIGHT_FISHBONE2:
         return node.dir
       default:
         return ''
@@ -675,17 +760,22 @@ class Drag extends Base {
   handleVerticalCheck(node, checkList, isReverse = false) {
     const { layout } = this.mindMap.opt
     const { LAYOUT, LAYOUT_GROW_DIR } = CONSTANTS
-    const { VERTICAL_TIMELINE, FISHBONE } = LAYOUT
-    const { BOTTOM, LEFT } = LAYOUT_GROW_DIR
+    const {
+      VERTICAL_TIMELINE,
+      VERTICAL_TIMELINE2,
+      VERTICAL_TIMELINE3,
+      FISHBONE,
+      FISHBONE2,
+      RIGHT_FISHBONE,
+      RIGHT_FISHBONE2
+    } = LAYOUT
+    const { LEFT } = LAYOUT_GROW_DIR
     const mouseMoveX = this.mouseMoveX
     const mouseMoveY = this.mouseMoveY
     const nodeRect = this.getNodeRect(node)
     const dir = this.getNewChildNodeDir(node)
     const layerIndex = node.layerIndex
-    if (
-      isReverse ||
-      (layout === FISHBONE && dir === BOTTOM && layerIndex >= 3)
-    ) {
+    if (isReverse) {
       checkList = checkList.reverse()
     }
     let oneFourthHeight = nodeRect.originHeight / 4
@@ -720,12 +810,19 @@ class Drag extends Base {
         let notRenderLine = false
         switch (layout) {
           case VERTICAL_TIMELINE:
+          case VERTICAL_TIMELINE2:
+          case VERTICAL_TIMELINE3:
             if (layerIndex === 1) {
               x =
                 nodeRect.originLeft +
                 nodeRect.originWidth / 2 -
                 this.placeholderWidth / 2
             }
+            break
+          case RIGHT_FISHBONE:
+          case RIGHT_FISHBONE2:
+            x =
+              nodeRect.originLeft + nodeRect.originWidth - this.placeholderWidth
             break
           default:
         }
@@ -741,6 +838,9 @@ class Drag extends Base {
             this.placeholderHeight / 2
           switch (layout) {
             case FISHBONE:
+            case FISHBONE2:
+            case RIGHT_FISHBONE:
+            case RIGHT_FISHBONE2:
               if (layerIndex === 2) {
                 notRenderLine = true
                 y =
@@ -770,6 +870,9 @@ class Drag extends Base {
             this.placeholderHeight / 2
           switch (layout) {
             case FISHBONE:
+            case FISHBONE2:
+            case RIGHT_FISHBONE:
+            case RIGHT_FISHBONE2:
               if (layerIndex === 2) {
                 notRenderLine = true
                 y =
@@ -806,7 +909,14 @@ class Drag extends Base {
   handleHorizontalCheck(node, checkList) {
     const { layout } = this.mindMap.opt
     const { LAYOUT } = CONSTANTS
-    const { FISHBONE, TIMELINE, TIMELINE2 } = LAYOUT
+    const {
+      FISHBONE,
+      FISHBONE2,
+      RIGHT_FISHBONE,
+      RIGHT_FISHBONE2,
+      TIMELINE,
+      TIMELINE2
+    } = LAYOUT
     let mouseMoveX = this.mouseMoveX
     let mouseMoveY = this.mouseMoveY
     let nodeRect = this.getNodeRect(node)
@@ -846,6 +956,9 @@ class Drag extends Base {
               this.placeholderWidth / 2
             break
           case FISHBONE:
+          case FISHBONE2:
+          case RIGHT_FISHBONE:
+          case RIGHT_FISHBONE2:
             if (layerIndex === 1) {
               notRenderLine = true
               y =
@@ -857,7 +970,11 @@ class Drag extends Base {
           default:
         }
         if (checkIsPrevNode) {
-          this.prevNode = node
+          if ([RIGHT_FISHBONE, RIGHT_FISHBONE2].includes(layout)) {
+            this.nextNode = node
+          } else {
+            this.prevNode = node
+          }
           this.setPlaceholderRect({
             x:
               nodeRect.originRight +
@@ -868,7 +985,11 @@ class Drag extends Base {
             notRenderLine
           })
         } else if (checkIsNextNode) {
-          this.nextNode = node
+          if ([RIGHT_FISHBONE, RIGHT_FISHBONE2].includes(layout)) {
+            this.prevNode = node
+          } else {
+            this.nextNode = node
+          }
           this.setPlaceholderRect({
             x:
               nodeRect.originLeft -
@@ -1092,7 +1213,11 @@ class Drag extends Base {
       this.handleHorizontalCheck(node, checkList)
     } else {
       // 处于上方的三级节点需要特殊处理，因为节点排列方向反向了
-      if (node.dir === CONSTANTS.LAYOUT_GROW_DIR.TOP && node.layerIndex === 2) {
+      const is2LayerTop =
+        node.dir === CONSTANTS.LAYOUT_GROW_DIR.TOP && node.layerIndex === 2
+      const is2MoreLayerBottom =
+        node.dir === CONSTANTS.LAYOUT_GROW_DIR.BOTTOM && node.layerIndex >= 3
+      if (is2LayerTop || is2MoreLayerBottom) {
         this.handleVerticalCheck(node, checkList, true)
       } else {
         this.handleVerticalCheck(node, checkList)

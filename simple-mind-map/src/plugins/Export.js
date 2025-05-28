@@ -4,7 +4,8 @@ import {
   readBlob,
   removeHTMLEntities,
   resizeImgSize,
-  handleSelfCloseTags
+  handleSelfCloseTags,
+  addXmlns
 } from '../utils'
 import { SVG } from '@svgdotjs/svg.js'
 import drawBackgroundImageToCanvas from '../utils/simulateCSSBackgroundInCanvas'
@@ -54,7 +55,8 @@ class Export {
       errorHandler,
       resetCss,
       addContentToHeader,
-      addContentToFooter
+      addContentToFooter,
+      handleBeingExportSvg
     } = this.mindMap.opt
     let { svg, svgHTML, clipData } = this.mindMap.getSvgData({
       paddingX: exportPaddingX,
@@ -67,6 +69,7 @@ class Export {
       clipData.paddingX = exportPaddingX
       clipData.paddingY = exportPaddingY
     }
+    let svgIsChange = false
     // svg的image标签，把图片的url转换成data:url类型，否则导出会丢失图片
     const task1 = this.createTransformImgTaskList(
       svg,
@@ -87,16 +90,34 @@ class Export {
       errorHandler(ERROR_TYPES.EXPORT_LOAD_IMAGE_ERROR, error)
     }
     // 开启了节点富文本编辑，需要增加一些样式
-    let isAddResetCss
     if (this.mindMap.richText) {
       const foreignObjectList = svg.find('foreignObject')
       if (foreignObjectList.length > 0) {
         foreignObjectList[0].add(SVG(`<style>${resetCss}</style>`))
-        isAddResetCss = true
+        svgIsChange = true
+      }
+      // 如果还开启了数学公式，还要插入katex库的样式
+      if (this.mindMap.formula) {
+        const formulaList = svg.find('.ql-formula')
+        if (formulaList.length > 0) {
+          const styleText = this.mindMap.formula.getStyleText()
+          if (styleText) {
+            const styleEl = document.createElement('style')
+            styleEl.innerHTML = styleText
+            addXmlns(styleEl)
+            foreignObjectList[0].add(styleEl)
+            svgIsChange = true
+          }
+        }
       }
     }
+    // 自定义处理svg的方法
+    if (typeof handleBeingExportSvg === 'function') {
+      svgIsChange = true
+      svg = handleBeingExportSvg(svg)
+    }
     // svg节点内容有变，需要重新获取html字符串
-    if (taskList.length > 0 || isAddResetCss) {
+    if (taskList.length > 0 || svgIsChange) {
       svgHTML = svg.svg()
     }
     return {
@@ -107,7 +128,14 @@ class Export {
   }
 
   //   svg转png
-  svgToPng(svgSrc, transparent, clipData = null) {
+  svgToPng(
+    svgSrc,
+    transparent,
+    clipData = null,
+    fitBg = false,
+    format = 'image/png'
+  ) {
+    const { maxCanvasSize, minExportImgCanvasScale } = this.mindMap.opt
     return new Promise((resolve, reject) => {
       const img = new Image()
       // 跨域图片需要添加这个属性，否则画布被污染了无法导出图片
@@ -115,10 +143,8 @@ class Export {
       img.onload = async () => {
         try {
           const canvas = document.createElement('canvas')
-          const dpr = Math.max(
-            window.devicePixelRatio,
-            this.mindMap.opt.minExportImgCanvasScale
-          )
+          const dpr = Math.max(window.devicePixelRatio, minExportImgCanvasScale)
+          // 图片原始大小
           let imgWidth = img.width
           let imgHeight = img.height
           // 如果是裁减操作的话，那么需要手动添加内边距，及调整图片大小为实际的裁减区域的大小，不要忘了内边距哦
@@ -130,33 +156,80 @@ class Export {
             imgWidth = clipData.width + paddingX * 2
             imgHeight = clipData.height + paddingY * 2
           }
+          // 适配背景图片的大小
+          let fitBgImgWidth = 0
+          let fitBgImgHeight = 0
+          const { backgroundImage } = this.mindMap.themeConfig
+          if (fitBg && backgroundImage && !transparent) {
+            const bgImgSize = await new Promise(resolve => {
+              const bgImg = new Image()
+              bgImg.onload = () => {
+                resolve([bgImg.width, bgImg.height])
+              }
+              bgImg.onerror = () => {
+                resolve(null)
+              }
+              bgImg.src = backgroundImage
+            })
+            if (bgImgSize) {
+              const imgRatio = imgWidth / imgHeight
+              const bgRatio = bgImgSize[0] / bgImgSize[1]
+              if (imgRatio > bgRatio) {
+                fitBgImgWidth = imgWidth
+                fitBgImgHeight = imgWidth / bgRatio
+              } else {
+                fitBgImgHeight = imgHeight
+                fitBgImgWidth = imgHeight * bgRatio
+              }
+            }
+          }
           // 检查是否超出canvas支持的像素上限
-          const maxSize = 16384 / dpr
-          const maxArea = maxSize * maxSize
-          if (imgWidth * imgHeight > maxArea) {
+          // canvas大小需要乘以dpr
+          let scaleX = 1
+          let scaleY = 1
+          let canvasWidth = (fitBgImgWidth || imgWidth) * dpr
+          let canvasHeight = (fitBgImgHeight || imgHeight) * dpr
+          if (canvasWidth > maxCanvasSize || canvasHeight > maxCanvasSize) {
             let newWidth = null
             let newHeight = null
-            if (imgWidth > maxSize) {
-              newWidth = maxArea / imgHeight
-            } else if (imgHeight > maxSize) {
-              newHeight = maxArea / imgWidth
+            if (canvasWidth > maxCanvasSize) {
+              // 如果宽度超出限制，那么调整为上限值
+              newWidth = maxCanvasSize
+            } else if (canvasHeight > maxCanvasSize) {
+              // 高度同理
+              newHeight = maxCanvasSize
             }
-            const res = resizeImgSize(imgWidth, imgHeight, newWidth, newHeight)
-            imgWidth = res[0]
-            imgHeight = res[1]
+            // 计算缩放后的宽高
+            const res = resizeImgSize(
+              canvasWidth,
+              canvasHeight,
+              newWidth,
+              newHeight
+            )
+            scaleX = res[0] / canvasWidth
+            scaleY = res[1] / canvasHeight
+            canvasWidth = res[0]
+            canvasHeight = res[1]
           }
-          canvas.width = imgWidth * dpr
-          canvas.height = imgHeight * dpr
-          canvas.style.width = imgWidth + 'px'
-          canvas.style.height = imgHeight + 'px'
+          canvas.width = canvasWidth
+          canvas.height = canvasHeight
+          const styleWidth = canvasWidth / dpr
+          const styleHeight = canvasHeight / dpr
+          // canvas元素实际上的大小
+          canvas.style.width = styleWidth + 'px'
+          canvas.style.height = styleHeight + 'px'
           const ctx = canvas.getContext('2d')
           ctx.scale(dpr, dpr)
           // 绘制背景
           if (!transparent) {
-            await this.drawBackgroundToCanvas(ctx, imgWidth, imgHeight)
+            await this.drawBackgroundToCanvas(ctx, styleWidth, styleHeight)
           }
           // 图片绘制到canvas里
           // 如果有裁减数据，那么需要进行裁减
+          const fitBgLeft =
+            (fitBgImgWidth > 0 ? (fitBgImgWidth - imgWidth) / 2 : 0) * scaleX
+          const fitBgTop =
+            (fitBgImgHeight > 0 ? (fitBgImgHeight - imgHeight) / 2 : 0) * scaleY
           if (clipData) {
             ctx.drawImage(
               img,
@@ -164,15 +237,21 @@ class Export {
               clipData.top,
               clipData.width,
               clipData.height,
-              paddingX,
-              paddingY,
-              clipData.width,
-              clipData.height
+              paddingX * scaleX + fitBgLeft,
+              paddingY * scaleY + fitBgTop,
+              clipData.width * scaleX,
+              clipData.height * scaleY
             )
           } else {
-            ctx.drawImage(img, 0, 0, imgWidth, imgHeight)
+            ctx.drawImage(
+              img,
+              fitBgLeft,
+              fitBgTop,
+              imgWidth * scaleX,
+              imgHeight * scaleY
+            )
           }
-          resolve(canvas.toDataURL())
+          resolve(canvas.toDataURL(format))
         } catch (error) {
           reject(error)
         }
@@ -250,16 +329,35 @@ class Export {
     })
   }
 
+  // 导出为指定格式的图片
+  async _image(format, name, transparent = false, node = null, fitBg = false) {
+    this.mindMap.renderer.textEdit.hideEditTextBox()
+    this.handleNodeExport(node)
+    const { str, clipData } = await this.getSvgData(node)
+    const svgUrl = await this.fixSvgStrAndToBlob(str)
+    const res = await this.svgToPng(
+      svgUrl,
+      transparent,
+      clipData,
+      fitBg,
+      format
+    )
+    return res
+  }
+
   //  导出为png
   /**
    * 方法1.把svg的图片都转化成data:url格式，再转换
    * 方法2.把svg的图片提取出来再挨个绘制到canvas里，最后一起转换
    */
-  async png(name, transparent = false, node = null) {
-    this.handleNodeExport(node)
-    const { str, clipData } = await this.getSvgData(node)
-    const svgUrl = await this.fixSvgStrAndToBlob(str)
-    const res = await this.svgToPng(svgUrl, transparent, clipData)
+  async png(...args) {
+    const res = await this._image('image/png', ...args)
+    return res
+  }
+
+  // 导出为jpg
+  async jpg(...args) {
+    const res = await this._image('image/jpg', ...args)
     return res
   }
 
@@ -267,18 +365,19 @@ class Export {
   handleNodeExport(node) {
     if (node && node.getData('isActive')) {
       node.deactivate()
-      if (!this.mindMap.opt.alwaysShowExpandBtn && node.getData('expand')) {
+      const { alwaysShowExpandBtn, notShowExpandBtn } = this.mindMap.opt
+      if (!alwaysShowExpandBtn && !notShowExpandBtn && node.getData('expand')) {
         node.removeExpandBtn()
       }
     }
   }
 
   //  导出为pdf
-  async pdf(name, transparent = false) {
+  async pdf(name, transparent = false, fitBg = false) {
     if (!this.mindMap.doExportPDF) {
       throw new Error('请注册ExportPDF插件')
     }
-    const img = await this.png(name, transparent)
+    const img = await this.png(name, transparent, null, fitBg)
     // 使用jspdf库
     // await this.mindMap.doExportPDF.pdf(name, img)
     // 使用pdf-lib库
@@ -299,6 +398,7 @@ class Export {
 
   //  导出为svg
   async svg(name) {
+    this.mindMap.renderer.textEdit.hideEditTextBox()
     const { node } = await this.getSvgData()
     node.first().before(SVG(`<title>${name}</title>`))
     await this.drawBackgroundToSvg(node)

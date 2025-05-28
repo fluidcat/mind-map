@@ -34,8 +34,15 @@ class MindMap extends Base {
     walk(
       this.renderer.renderTree,
       null,
-      (cur, parent, isRoot, layerIndex, index) => {
-        let newNode = this.createNode(cur, parent, isRoot, layerIndex)
+      (cur, parent, isRoot, layerIndex, index, ancestors) => {
+        let newNode = this.createNode(
+          cur,
+          parent,
+          isRoot,
+          layerIndex,
+          index,
+          ancestors
+        )
         // 根节点定位在画布中心位置
         if (isRoot) {
           this.setNodeCenter(newNode)
@@ -47,9 +54,10 @@ class MindMap extends Base {
           } else {
             // 节点生长方向
             newNode.dir =
-              index % 2 === 0
+              newNode.getData('dir') ||
+              (index % 2 === 0
                 ? CONSTANTS.LAYOUT_GROW_DIR.RIGHT
-                : CONSTANTS.LAYOUT_GROW_DIR.LEFT
+                : CONSTANTS.LAYOUT_GROW_DIR.LEFT)
           }
           // 根据生长方向定位到父节点的左侧或右侧
           newNode.left =
@@ -213,7 +221,8 @@ class MindMap extends Base {
       return []
     }
     let { left, top, width, height, expandBtnSize } = node
-    if (!this.mindMap.opt.alwaysShowExpandBtn) {
+    const { alwaysShowExpandBtn, notShowExpandBtn } = this.mindMap.opt
+    if (!alwaysShowExpandBtn || notShowExpandBtn) {
       expandBtnSize = 0
     }
     let marginX = this.getMarginX(node.layerIndex + 1)
@@ -256,7 +265,8 @@ class MindMap extends Base {
       return []
     }
     let { left, top, width, height, expandBtnSize } = node
-    if (!this.mindMap.opt.alwaysShowExpandBtn) {
+    const { alwaysShowExpandBtn, notShowExpandBtn } = this.mindMap.opt
+    if (!alwaysShowExpandBtn || notShowExpandBtn) {
       expandBtnSize = 0
     }
     const { nodeUseLineStyle } = this.mindMap.themeConfig
@@ -296,7 +306,8 @@ class MindMap extends Base {
       return []
     }
     let { left, top, width, height, expandBtnSize } = node
-    if (!this.mindMap.opt.alwaysShowExpandBtn) {
+    const { alwaysShowExpandBtn, notShowExpandBtn } = this.mindMap.opt
+    if (!alwaysShowExpandBtn || notShowExpandBtn) {
       expandBtnSize = 0
     }
     const {

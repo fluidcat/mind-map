@@ -10,7 +10,7 @@ module.exports = {
   lintOnSave: false,
   productionSourceMap: false,
   filenameHashing: false,
-  transpileDependencies: ['yjs', 'lib0'],
+  transpileDependencies: ['yjs', 'lib0', 'quill'],
   chainWebpack: config => {
     // 移除 preload 插件
     config.plugins.delete('preload')
@@ -36,6 +36,14 @@ module.exports = {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src/')
+      }
+    }
+  },
+  devServer: {
+    proxy: {
+      '^/api/v3/': {
+        target: 'http://ark.cn-beijing.volces.com',
+        changeOrigin: true
       }
     }
   }

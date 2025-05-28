@@ -1,10 +1,5 @@
-import {
-  checkIsNodeStyleDataKey,
-  generateColorByContent
-} from '../../../utils/index'
-import { Gradient } from '@svgdotjs/svg.js'
+import { checkIsNodeStyleDataKey } from '../../../utils/index'
 
-const rootProp = ['paddingX', 'paddingY']
 const backgroundStyleProps = [
   'backgroundColor',
   'backgroundImage',
@@ -13,10 +8,23 @@ const backgroundStyleProps = [
   'backgroundSize'
 ]
 
+export const shapeStyleProps = [
+  'gradientStyle',
+  'startColor',
+  'endColor',
+  'startDir',
+  'endDir',
+  'fillColor',
+  'borderColor',
+  'borderWidth',
+  'borderDasharray'
+]
+
 //  样式类
 class Style {
   //   设置背景样式
   static setBackgroundStyle(el, themeConfig) {
+    if (!el) return
     // 缓存容器元素原本的样式
     if (!Style.cacheStyle) {
       Style.cacheStyle = {}
@@ -66,10 +74,11 @@ class Style {
   //  合并样式
   merge(prop, root) {
     let themeConfig = this.ctx.mindMap.themeConfig
-    // 三级及以下节点
-    let defaultConfig = themeConfig.node
-    if (root || rootProp.includes(prop)) {
-      // 直接使用最外层样式
+    let defaultConfig = null
+    let useRoot = false
+    if (root) {
+      // 使用最外层样式
+      useRoot = true
       defaultConfig = themeConfig
     } else if (this.ctx.isGeneralization) {
       // 概要节点
@@ -80,11 +89,27 @@ class Style {
     } else if (this.ctx.layerIndex === 1) {
       // 二级节点
       defaultConfig = themeConfig.second
+    } else {
+      // 三级及以下节点
+      defaultConfig = themeConfig.node
     }
+    let value = ''
     // 优先使用节点本身的样式
-    return this.getSelfStyle(prop) !== undefined
-      ? this.getSelfStyle(prop)
-      : defaultConfig[prop]
+    if (this.getSelfStyle(prop) !== undefined) {
+      value = this.getSelfStyle(prop)
+    } else if (defaultConfig[prop] !== undefined) {
+      // 否则使用对应层级的样式
+      value = defaultConfig[prop]
+    } else {
+      // 否则使用最外层样式
+      value = themeConfig[prop]
+    }
+    if (!useRoot) {
+      this.addToEffectiveStyles({
+        [prop]: value
+      })
+    }
+    return value
   }
 
   //  获取某个样式值
@@ -97,6 +122,16 @@ class Style {
     return this.ctx.getData(prop)
   }
 
+  // 更新当前节点生效的样式数据
+  addToEffectiveStyles(styles) {
+    // effectiveStyles目前只提供给格式刷插件使用，所以如果没有注册该插件，那么不需要保存该数据
+    if (!this.ctx.mindMap.painter) return
+    this.ctx.effectiveStyles = {
+      ...this.ctx.effectiveStyles,
+      ...styles
+    }
+  }
+
   //  矩形
   rect(node) {
     this.shape(node)
@@ -105,18 +140,23 @@ class Style {
 
   // 形状
   shape(node) {
-    if (this.merge('gradientStyle')) {
+    const styles = {}
+    shapeStyleProps.forEach(key => {
+      styles[key] = this.merge(key)
+    })
+    if (styles.gradientStyle) {
       if (!this._gradient) {
         this._gradient = this.ctx.nodeDraw.gradient('linear')
       }
       this._gradient.update(add => {
-        add.stop(0, this.merge('startColor'))
-        add.stop(1, this.merge('endColor'))
+        add.stop(0, styles.startColor)
+        add.stop(1, styles.endColor)
       })
+      this._gradient.from(...styles.startDir).to(...styles.endDir)
       node.fill(this._gradient)
     } else {
       node.fill({
-        color: this.merge('fillColor')
+        color: styles.fillColor
       })
     }
     // 节点使用横线样式，不需要渲染非激活状态的边框样式
@@ -129,85 +169,89 @@ class Style {
     //   return
     // }
     node.stroke({
-      color: this.merge('borderColor'),
-      width: this.merge('borderWidth'),
-      dasharray: this.merge('borderDasharray')
+      color: styles.borderColor,
+      width: styles.borderWidth,
+      dasharray: styles.borderDasharray
     })
   }
 
   //  文字
   text(node) {
+    const styles = {
+      color: this.merge('color'),
+      fontFamily: this.merge('fontFamily'),
+      fontSize: this.merge('fontSize'),
+      fontWeight: this.merge('fontWeight'),
+      fontStyle: this.merge('fontStyle'),
+      textDecoration: this.merge('textDecoration')
+    }
     node
       .fill({
-        color: this.merge('color')
+        color: styles.color
       })
       .css({
-        'font-family': this.merge('fontFamily'),
-        'font-size': this.merge('fontSize'),
-        'font-weight': this.merge('fontWeight'),
-        'font-style': this.merge('fontStyle'),
-        'text-decoration': this.merge('textDecoration')
+        'font-family': styles.fontFamily,
+        'font-size': styles.fontSize + 'px',
+        'font-weight': styles.fontWeight,
+        'font-style': styles.fontStyle,
+        'text-decoration': styles.textDecoration
       })
-  }
-
-  // 生成内联样式
-  createStyleText() {
-    return `
-      color: ${this.merge('color')};
-      font-family: ${this.merge('fontFamily')};
-      font-size: ${this.merge('fontSize') + 'px'};
-      font-weight: ${this.merge('fontWeight')};
-      font-style: ${this.merge('fontStyle')};
-      text-decoration: ${this.merge('textDecoration')}
-    `
-  }
-
-  // 获取文本样式
-  getTextFontStyle() {
-    return {
-      italic: this.merge('fontStyle') === 'italic',
-      bold: this.merge('fontWeight'),
-      fontSize: this.merge('fontSize'),
-      fontFamily: this.merge('fontFamily')
-    }
   }
 
   //  html文字节点
-  domText(node, fontSizeScale = 1, isMultiLine) {
-    node.style.fontFamily = this.merge('fontFamily')
-    node.style.fontSize = this.merge('fontSize') * fontSizeScale + 'px'
-    node.style.fontWeight = this.merge('fontWeight') || 'normal'
-    node.style.lineHeight = !isMultiLine ? 'normal' : this.merge('lineHeight')
-    node.style.fontStyle = this.merge('fontStyle')
+  domText(node, fontSizeScale = 1) {
+    const styles = {
+      color: this.merge('color'),
+      fontFamily: this.merge('fontFamily'),
+      fontSize: this.merge('fontSize'),
+      fontWeight: this.merge('fontWeight'),
+      fontStyle: this.merge('fontStyle'),
+      textDecoration: this.merge('textDecoration'),
+      textAlign: this.merge('textAlign')
+    }
+    node.style.color = styles.color
+    node.style.textDecoration = styles.textDecoration
+    node.style.fontFamily = styles.fontFamily
+    node.style.fontSize = styles.fontSize * fontSizeScale + 'px'
+    node.style.fontWeight = styles.fontWeight || 'normal'
+    node.style.fontStyle = styles.fontStyle
+    node.style.textAlign = styles.textAlign
   }
 
   //  标签文字
-  tagText(node) {
+  tagText(node, style) {
     node
       .fill({
         color: '#fff'
       })
       .css({
-        'font-size': '12px'
+        'font-size': style.fontSize + 'px'
       })
   }
 
   //  标签矩形
-  tagRect(node, text, color) {
+  tagRect(node, style) {
     node.fill({
-      color: color || generateColorByContent(text.node.textContent)
+      color: style.fill
     })
+    if (style.radius) {
+      node.radius(style.radius)
+    }
   }
 
   //  内置图标
-  iconNode(node) {
+  iconNode(node, color) {
     node.attr({
-      fill: this.merge('color')
+      fill: color || this.merge('color')
     })
   }
 
   //  连线
   line(line, { width, color, dasharray } = {}, enableMarker, childNode) {
+    const { customHandleLine } = this.ctx.mindMap.opt
+    if (typeof customHandleLine === 'function') {
+      customHandleLine(this.ctx, line, { width, color, dasharray })
+    }
     line.stroke({ color, dasharray, width }).fill({ color: 'none' })
     // 可以显示箭头
     if (enableMarker) {
@@ -270,7 +314,7 @@ class Style {
     node2.fill({ color: color })
     fillNode.fill({ color: fill })
     if (this.ctx.mindMap.opt.isShowExpandNum) {
-      node.attr({ 'font-size': fontSize, 'font-color': fontColor })
+      node.attr({ 'font-size': fontSize + 'px', 'font-color': fontColor })
     }
   }
 
@@ -285,10 +329,23 @@ class Style {
     return res
   }
 
+  // 获取自定义的样式
+  getCustomStyle() {
+    const customStyle = {}
+    Object.keys(this.ctx.getData()).forEach(item => {
+      if (checkIsNodeStyleDataKey(item)) {
+        customStyle[item] = this.ctx.getData(item)
+      }
+    })
+    return customStyle
+  }
+
   // hover和激活节点
   hoverNode(node) {
-    const { hoverRectColor } = this.ctx.mindMap.opt
-    node.radius(5).fill('none').stroke({
+    const hoverRectColor =
+      this.merge('hoverRectColor') || this.ctx.mindMap.opt.hoverRectColor
+    const hoverRectRadius = this.merge('hoverRectRadius')
+    node.radius(hoverRectRadius).fill('none').stroke({
       color: hoverRectColor
     })
   }

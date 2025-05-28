@@ -34,8 +34,15 @@ class VerticalTimeline extends Base {
     walk(
       this.renderer.renderTree,
       null,
-      (cur, parent, isRoot, layerIndex, index) => {
-        let newNode = this.createNode(cur, parent, isRoot, layerIndex)
+      (cur, parent, isRoot, layerIndex, index, ancestors) => {
+        let newNode = this.createNode(
+          cur,
+          parent,
+          isRoot,
+          layerIndex,
+          index,
+          ancestors
+        )
         // 根节点定位在画布中心位置
         if (isRoot) {
           this.setNodeCenter(newNode)
@@ -46,10 +53,16 @@ class VerticalTimeline extends Base {
           if (parent._node.dir) {
             newNode.dir = parent._node.dir
           } else {
-            newNode.dir =
-              index % 2 === 0
-                ? CONSTANTS.LAYOUT_GROW_DIR.RIGHT
-                : CONSTANTS.LAYOUT_GROW_DIR.LEFT
+            if (this.layout === CONSTANTS.LAYOUT.VERTICAL_TIMELINE2) {
+              newNode.dir = CONSTANTS.LAYOUT_GROW_DIR.LEFT
+            } else if (this.layout === CONSTANTS.LAYOUT.VERTICAL_TIMELINE3) {
+              newNode.dir = CONSTANTS.LAYOUT_GROW_DIR.RIGHT
+            } else {
+              newNode.dir =
+                index % 2 === 0
+                  ? CONSTANTS.LAYOUT_GROW_DIR.RIGHT
+                  : CONSTANTS.LAYOUT_GROW_DIR.LEFT
+            }
           }
           // 定位二级节点的left
           if (parent._node.isRoot) {
@@ -234,7 +247,8 @@ class VerticalTimeline extends Base {
       return []
     }
     let { expandBtnSize } = node
-    if (!this.mindMap.opt.alwaysShowExpandBtn) {
+    const { alwaysShowExpandBtn, notShowExpandBtn } = this.mindMap.opt
+    if (!alwaysShowExpandBtn || notShowExpandBtn) {
       expandBtnSize = 0
     }
     if (node.isRoot) {
@@ -293,7 +307,8 @@ class VerticalTimeline extends Base {
       return []
     }
     let { left, top, width, height, expandBtnSize } = node
-    if (!this.mindMap.opt.alwaysShowExpandBtn) {
+    const { alwaysShowExpandBtn, notShowExpandBtn } = this.mindMap.opt
+    if (!alwaysShowExpandBtn || notShowExpandBtn) {
       expandBtnSize = 0
     }
     node.children.forEach((item, index) => {
@@ -331,7 +346,8 @@ class VerticalTimeline extends Base {
       return []
     }
     let { left, top, width, height, expandBtnSize } = node
-    if (!this.mindMap.opt.alwaysShowExpandBtn) {
+    const { alwaysShowExpandBtn, notShowExpandBtn } = this.mindMap.opt
+    if (!alwaysShowExpandBtn || notShowExpandBtn) {
       expandBtnSize = 0
     }
     node.children.forEach((item, index) => {
